@@ -1,0 +1,64 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:id_ideal_wallet/basicUi/standard/styled_scaffold_title.dart';
+import 'package:id_ideal_wallet/constants/navigation_pages.dart';
+import 'package:id_ideal_wallet/functions/util.dart';
+import 'package:id_ideal_wallet/provider/navigation_provider.dart';
+import 'package:id_ideal_wallet/provider/wallet_provider.dart';
+import 'package:id_ideal_wallet/views/ausweis_view.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../l10n/app_localizations.dart';
+
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({super.key});
+
+  @override
+  SettingsPageState createState() => SettingsPageState();
+}
+
+class SettingsPageState extends State<SettingsPage> {
+  @override
+  Widget build(BuildContext context) {
+    var wallet = Provider.of<WalletProvider>(context, listen: false);
+    return StyledScaffoldTitle(
+      title: AppLocalizations.of(context)!.settings,
+      child: Column(
+        children: [
+          ListTile(
+            title: Text(AppLocalizations.of(context)!.termsOfService),
+            subtitle: Text(wallet.tosUrl),
+            onTap: () {
+              launchUrl(Uri.parse(wallet.tosUrl),
+                  mode: LaunchMode.externalApplication);
+            },
+          ),
+          ListTile(
+            title: Text(AppLocalizations.of(context)!.license),
+            onTap: () => Provider.of<NavigationProvider>(context, listen: false)
+                .changePage([NavigationPage.license]),
+          ),
+          ListTile(
+            title: Text(AppLocalizations.of(context)!.settings),
+            subtitle: Text(wallet.aboutUrl),
+            onTap: () {
+              launchUrl(Uri.parse(wallet.aboutUrl),
+                  mode: LaunchMode.externalApplication);
+            },
+          ),
+          if (Platform.isAndroid || Platform.isIOS)
+            ListTile(
+              title: Text('Ausweis'),
+              onTap: () => navigateClassic(const AusweisView()),
+            ),
+          // ListTile(
+          //   title: Text('Wallet Attestation'),
+          //   onTap: () => getWalletAttestation(),
+          // ),
+        ],
+      ),
+    );
+  }
+}

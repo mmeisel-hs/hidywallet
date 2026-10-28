@@ -1,0 +1,22 @@
+enum NavigationPage {
+  abo,
+  credential,
+  qrScanner,
+  paymentCard,
+  settings,
+  webView,
+  credentialDetail,
+  identityOverview,
+  authorizedApps,
+  license,
+  searchNewAbo,
+  sendSatoshi,
+  topUp,
+  paymentOverview,
+  ausweis,
+  aboDetail,
+  backupOverview,
+  backupCreate,
+  backupRestore,
+  email
+}

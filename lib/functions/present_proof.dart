@@ -1,0 +1,320 @@
+import 'dart:convert';
+
+import 'package:dart_ssi/credentials.dart';
+import 'package:dart_ssi/didcomm.dart';
+import 'package:flutter/material.dart';
+import 'package:id_ideal_wallet/functions/util.dart';
+import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
+
+import '../constants/server_address.dart';
+import '../l10n/app_localizations.dart';
+import '../provider/wallet_provider.dart';
+import '../views/presentation_dialog.dart';
+import '../views/presentation_proposal_dialog.dart';
+import '../views/presentation_request.dart';
+import 'didcomm_message_handler.dart';
+
+Future<bool> handleProposePresentation(
+    ProposePresentation message, WalletProvider wallet) async {
+  var res = await showDialog(
+      context: navigatorKey.currentContext!,
+      builder: (BuildContext context) => buildPresentationProposalDialog(
+          context, message.presentationDefinition!.first));
+
+  if (res) {
+    //It should be the first message
+    var myConnectionDid = await wallet.newConnectionDid();
+    List<PresentationDefinitionWithOptions> withOptions = [];
+    for (var definition in message.presentationDefinition!) {
+      var tmp = PresentationDefinitionWithOptions(
+          domain: 'domain',
+          challenge: const Uuid().v4(),
+          presentationDefinition: definition);
+      withOptions.add(tmp);
+    }
+    var answer = RequestPresentation(
+        presentationDefinition: withOptions,
+        from: myConnectionDid,
+        to: [message.from!],
+        replyUrl: '$relay/buffer/$myConnectionDid');
+
+    wallet.storeConversation(answer, myConnectionDid);
+
+    sendMessage(
+        myConnectionDid,
+        determineReplyUrl(message.replyUrl, message.replyTo),
+        wallet,
+        answer,
+        message.from!);
+  }
+  return false;
+}
+
+Future<bool> handleRequestPresentation(
+    RequestPresentation message, WalletProvider wallet,
+    [String? initialWebview]) async {
+  logger.d('Request Presentation message received: $initialWebview');
+
+  String threadId;
+  if (message.threadId != null) {
+    threadId = message.threadId!;
+  } else {
+    threadId = message.id;
+  }
+
+  //Are there any previous messages?
+  var entry = wallet.getConversation(threadId);
+  String myDid;
+  if (entry == null) {
+    myDid = await wallet.newConnectionDid();
+  } else {
+    myDid = entry.myDid;
+  }
+
+  var allCreds = wallet.allCredentials();
+  List<VerifiableCredential> creds = [];
+  allCreds.forEach((key, value) {
+    if (value.verifiableCredential != '') {
+      var vc = VerifiableCredential.fromJson(value.verifiableCredential);
+      var type = getTypeToShow(vc.type);
+      if (type != 'PaymentReceipt') {
+        var id = vc.credentialSubject['id'];
+        var status = wallet.revocationState[id];
+        if (status == RevocationState.valid.index ||
+            status == RevocationState.unknown.index) {
+          creds.add(vc);
+        }
+      }
+    }
+  });
+  var definition = message.presentationDefinition.first.presentationDefinition;
+  logger.d(definition.toJson());
+
+  var definitionToHash = PresentationDefinition(
+      inputDescriptors: definition.inputDescriptors
+          .map((e) => InputDescriptor(
+                id: '',
+                constraints: InputDescriptorConstraints(
+                  subjectIsIssuer: e.constraints?.subjectIsIssuer,
+                  fields: e.constraints?.fields
+                      ?.map((eIn) => InputDescriptorField(
+                          path: eIn.path, id: '', filter: eIn.filter))
+                      .toList(),
+                ),
+              ))
+          .toList(),
+      submissionRequirement: definition.submissionRequirement
+          ?.map((e) => SubmissionRequirement(
+              rule: e.rule,
+              count: e.count,
+              from: e.from,
+              max: e.max,
+              min: e.min))
+          .toList(),
+      id: '');
+  var definitionHash = sha256.process(utf8.encode(definitionToHash.toString()));
+  logger.d(definitionHash);
+
+  List<VerifiableCredential>? paymentCards;
+  String? invoice;
+  var paymentReq = message.attachments!.where(
+      (element) => element.format != null && element.format == 'lnInvoice');
+  if (paymentReq.isNotEmpty) {
+    invoice = paymentReq.first.data.json?['lnInvoice'];
+    logger.d('invoice: $invoice');
+    if (invoice != null) {
+      paymentCards = wallet.paymentCredentials;
+      if (paymentCards.isEmpty) {
+        showErrorMessage(
+            AppLocalizations.of(navigatorKey.currentContext!)!.noPaymentMethod);
+      }
+    }
+  }
+
+  Map<String, dynamic>? invoiceReq;
+  var lnInvoiceReq = message.attachments!.where((element) =>
+      element.format != null && element.format == 'lnInvoiceRequest');
+  if (lnInvoiceReq.isNotEmpty) {
+    invoiceReq = lnInvoiceReq.first.data.json;
+    logger.d('invoice request: $invoiceReq');
+    if (invoiceReq != null) {
+      paymentCards = wallet.paymentCredentials;
+      if (paymentCards.isEmpty) {
+        showErrorMessage(
+            AppLocalizations.of(navigatorKey.currentContext!)!.noPaymentMethod);
+      }
+    }
+  }
+
+  try {
+    var filtered = searchCredentialsForPresentationDefinition(definition,
+        credentials: creds);
+    logger.d('successfully filtered');
+
+    var authorizedApps = wallet.getAuthorizedApps();
+    logger.d(authorizedApps);
+
+    var requester =
+        determineReplyUrl(message.replyUrl, message.replyTo, myDid) ?? '';
+    logger.d(requester);
+
+    if (initialWebview != null && authorizedApps.contains(initialWebview)) {
+      logger.d('send with no interaction');
+      var vp = VerifiablePresentation.fromFilterResults(filtered);
+      for (var vc in vp.verifiableCredential!) {
+        var did = vc.credentialSubject['id'];
+        if (did == null || did == '') continue;
+        var (signer, proofType) = await getCredentialSigningStuff(wallet, did);
+        await vp.addProof(signer, proofType,
+            challenge: message.presentationDefinition.first.challenge,
+            loadDocument: loadDocumentFast);
+      }
+      var presentationMessage = Presentation(
+          replyUrl: '$relay/buffer/$myDid',
+          returnRoute: ReturnRouteValue.thread,
+          to: [message.from!],
+          from: myDid,
+          verifiablePresentation: [vp],
+          threadId: message.threadId ?? message.id,
+          parentThreadId: message.parentThreadId);
+
+      sendMessage(myDid, requester, wallet, presentationMessage, message.from!,
+          silent: true);
+    } else {
+      var target = PresentationRequestDialog(
+        definition: definition,
+        name: definition.name,
+        purpose: definition.purpose,
+        otherEndpoint: requester,
+        results: filtered,
+        lnInvoice: invoice,
+        paymentCards: paymentCards,
+        lnInvoiceRequest: invoiceReq,
+      );
+      var (_, finalSend) = await navigateClassic(target);
+      if (finalSend != null) {
+        sendPresentation(
+            finalSend,
+            message.presentationDefinition.first.challenge,
+            message,
+            myDid,
+            requester);
+      } else {
+        var problem = ProblemReport(
+            replyUrl: '$relay/buffer/$myDid',
+            returnRoute: ReturnRouteValue.thread,
+            to: [message.from!],
+            from: myDid,
+            parentThreadId: message.threadId ?? message.id,
+            code: 'e.p.user.decline');
+
+        // TODO sendMessage(
+        //     myDid,
+        //     requester,
+        //     Provider.of<WalletProvider>(navigatorKey.currentContext!,
+        //         listen: false),
+        //     problem,
+        //     message.from!);
+      }
+    }
+  } catch (e) {
+    logger.e(e);
+    showErrorMessage(
+        AppLocalizations.of(navigatorKey.currentContext!)!.noCredentialsTitle,
+        AppLocalizations.of(navigatorKey.currentContext!)!.noCredentialsNote);
+  }
+  return false;
+}
+
+sendPresentation(List<FilterResult> finalSend, String nonce,
+    RequestPresentation message, String myDid, String endpoint) async {
+  var vp = VerifiablePresentation.fromFilterResults(finalSend);
+  var wallet =
+      Provider.of<WalletProvider>(navigatorKey.currentContext!, listen: false);
+  for (var vc in vp.verifiableCredential!) {
+    var did = vc.credentialSubject['id'];
+    if (did == null || did == '') continue;
+    var (signer, proofType) = await getCredentialSigningStuff(wallet, did);
+    await vp.addProof(signer, proofType,
+        challenge: nonce, loadDocument: loadDocumentFast);
+    logger.d(await vp.verify());
+  }
+
+  var presentationMessage = Presentation(
+      replyUrl: '$relay/buffer/$myDid',
+      returnRoute: ReturnRouteValue.thread,
+      to: [message.from!],
+      from: myDid,
+      verifiablePresentation: [vp],
+      threadId: message.threadId ?? message.id,
+      parentThreadId: message.parentThreadId);
+  // logger.d(widget.lnInvoiceRequest);
+  // logger.d(widget.paymentCards);
+  // if (widget.lnInvoiceRequest != null && widget.paymentCards != null) {
+  //   logger.d('generate invoice');
+  //   var paymentId = widget.paymentCards!.first.id!;
+  //   var lnInKey = wallet.getLnInKey(paymentId);
+  //   var invoice = await createInvoice(
+  //       lnInKey!,
+  //       SatoshiAmount.fromUnitAndValue(
+  //           widget.lnInvoiceRequest!['amount'], SatoshiUnit.sat),
+  //       memo: widget.lnInvoiceRequest!['memo'] ?? '');
+  //   var index = invoice['checking_id'];
+  //   logger.d(index);
+  //   wallet.newPayment(
+  //     paymentId,
+  //     index,
+  //     widget.lnInvoiceRequest!['memo'] ?? '',
+  //     SatoshiAmount.fromUnitAndValue(
+  //         widget.lnInvoiceRequest!['amount'], SatoshiUnit.sat),
+  //   );
+  //
+  //   var paymentAtt = Attachment(
+  //       format: 'lnInvoice',
+  //       data: AttachmentData(json: {
+  //         'type': 'lnInvoice',
+  //         'lnInvoice': invoice['payment_request']
+  //       }));
+  //
+  //   presentationMessage.attachments?.add(paymentAtt);
+  // }
+  sendMessage(
+    myDid, endpoint, wallet, presentationMessage,
+    message.from!,
+    //lnInvoice: widget.lnInvoice, paymentCards: widget.paymentCards
+  );
+
+  for (var cred in vp.verifiableCredential ?? <VerifiableCredential>[]) {
+    wallet.storeExchangeHistoryEntry(
+        cred.credentialSubject['id'], DateTime.now(), 'present', endpoint);
+  }
+
+  // Navigator.of(context).pop();
+  return vp;
+}
+
+Future<bool> handlePresentation(
+    Presentation message, WalletProvider wallet) async {
+  var conversation = wallet.getConversation(message.threadId ?? message.id);
+  if (conversation == null) {
+    //TODO: send Problem Report
+    throw Exception('We have not requested a presentation');
+  }
+  var requestPresentation =
+      RequestPresentation.fromJson(conversation.lastMessage);
+  var challenge = requestPresentation.presentationDefinition.first.challenge;
+
+  var verified = await message.verifiablePresentation.first
+      .verify(expectedChallenge: challenge);
+  if (verified) {
+    await showDialog(
+        context: navigatorKey.currentContext!,
+        builder: (context) =>
+            buildPresentationDialog(message.verifiablePresentation, context));
+    return false;
+  } else {
+    //TODO: show to user
+    throw Exception('Presentation was wrong');
+  }
+}

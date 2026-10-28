@@ -1,0 +1,22 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": [
+          "9MY7ZZP3KS.eu.hidy.app"
+        ],
+        "components": [
+          {
+            "/": "/*"
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "9MY7ZZP3KS.eu.hidy.app"
+    ]
+  }
+}
