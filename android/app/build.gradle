@@ -59,6 +59,12 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId "eu.hidy.app"
+        manifestPlaceholders["appLabel"] = "Hidy"
+        // without key.properties (local dev builds) use an own ID, so the app installs next to the store version
+        if (!keystorePropertiesFile.exists()) {
+            applicationIdSuffix ".dev"
+            manifestPlaceholders["appLabel"] = "Hidy Dev"
+        }
         minSdkVersion 28
         targetSdkVersion 36
         versionCode flutterVersionCode.toInteger()
