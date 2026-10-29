@@ -187,13 +187,12 @@ class CredentialDetailView extends StatelessWidget {
       useBackSwipe: false,
       title: '',
       appBarActions: [
-        if (credential.expirationDate?.isBefore(DateTime.now()) ?? true)
-          InkWell(
-            onTap: () => _deleteCredential(context),
-            child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 10),
-                child: Icon(Icons.delete_outline_sharp, size: 30)),
-          )
+        InkWell(
+          onTap: () => _deleteCredential(context),
+          child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: Icon(Icons.delete_outline_sharp, size: 30)),
+        )
       ],
       child: _buildBody(),
     );
