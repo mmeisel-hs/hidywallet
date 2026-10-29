@@ -1,11 +1,15 @@
 plugins {
     id "com.android.application"
-    // START: FlutterFire Configuration
-    id 'com.google.gms.google-services'
-    // END: FlutterFire Configuration
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
 }
+
+// START: FlutterFire Configuration
+// google-services.json is not in the repo (e.g. local dev builds); without it the app builds without push
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
+// END: FlutterFire Configuration
 
 dependencies {
     implementation 'com.governikus:ausweisapp:2.3.2'
@@ -72,7 +76,8 @@ android {
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            // without key.properties (e.g. local dev builds) the release build is signed with the debug key
+            signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
         }
     }
 

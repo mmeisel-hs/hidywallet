@@ -48,3 +48,6 @@ app.*.map.json
 
 # secrets
 ios/Runner/GoogleService-Info.plist
+
+# FVM Version Cache
+.fvm/
