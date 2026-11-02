@@ -9,16 +9,26 @@ import 'package:id_ideal_wallet/views/credential_page.dart';
 
 import '../l10n/app_localizations.dart';
 
+/// What an OpenID4VCI issuer announces before the issuance: no values, only the names of the claims.
+class OfferedCredentialPreview {
+  final String name;
+  final List<String> claimNames;
+
+  const OfferedCredentialPreview(this.name, this.claimNames);
+}
+
 class CredentialOfferDialogNew extends StatefulWidget {
   const CredentialOfferDialogNew(
       {super.key,
       required this.credentials,
+      this.previews = const [],
       this.toPay,
       this.oidcIssuer,
       this.requestOidcTan = false,
       this.isOid = false});
 
   final List<VerifiableCredential> credentials;
+  final List<OfferedCredentialPreview> previews;
   final String? toPay, oidcIssuer;
   final bool requestOidcTan, isOid;
 
@@ -45,6 +55,35 @@ class CredentialOfferDialogNewState extends State<CredentialOfferDialogNew> {
         CredentialInfo(
           credential: c,
           showStatus: false,
+        ),
+        const SizedBox(
+          height: 10,
+        ),
+      ]);
+    }
+    for (var p in widget.previews) {
+      info.addAll([
+        Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          clipBehavior: Clip.antiAlias,
+          margin: EdgeInsets.zero,
+          child: ExpansionTile(
+            initiallyExpanded: true,
+            title: Text(p.name),
+            subtitle:
+                widget.oidcIssuer != null ? Text(widget.oidcIssuer!) : null,
+            expandedAlignment: Alignment.centerLeft,
+            children: p.claimNames
+                .map((name) => ListTile(
+                      visualDensity:
+                          const VisualDensity(horizontal: 0, vertical: -4),
+                      title: Text(name),
+                    ))
+                .toList(),
+          ),
         ),
         const SizedBox(
           height: 10,

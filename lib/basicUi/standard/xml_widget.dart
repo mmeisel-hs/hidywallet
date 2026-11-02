@@ -41,7 +41,7 @@ class XmlWidget extends StatelessWidget {
                     .credentialSubject[split.first.replaceAll('\$', '')] ??
                 '';
             if (split.last == 'date') {
-              // values that are no date (e.g. claim labels in an offer preview) are shown as they are
+              // values that are no date are shown as they are
               var date = value is String ? DateTime.tryParse(value) : null;
               value = date != null
                   ? DateFormat('dd.MM.yyyy').format(date)

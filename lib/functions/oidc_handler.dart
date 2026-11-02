@@ -79,16 +79,60 @@ Map<String, dynamic> findClaims(Map? claimsDescription) {
   return claims;
 }
 
-Map<String, dynamic> getClaimsFromDescriptionObject(
-    List<ClaimsDescriptionObject> description) {
-  var claims = <String, dynamic>{};
-  for (var d in description) {
-    logger.d(claims);
-    d.path.setValueAtPath(
-        d.display?.first.description ?? d.display?.first.name ?? '', claims);
+List<String> offeredClaimNames(CredentialsSupportedObject credential) {
+  if (credential.claimDescriptions != null) {
+    return credential.claimDescriptions!
+        .map((d) => d.display?.firstOrNull?.name ?? d.path.pointer.join('.'))
+        .toList();
   }
+  return findClaims(credential.claims).keys.toList();
+}
 
-  return claims;
+/// A credential fetched from an issuer and verified, but not stored yet.
+class ReceivedCredential {
+  final VerifiableCredential vc;
+  final String did, issuer, name;
+  final String? isoMdlData;
+
+  ReceivedCredential(this.vc, this.did, this.issuer, this.name,
+      {this.isoMdlData});
+}
+
+OverlayEntry showLoadingOverlay() {
+  var entry = OverlayEntry(
+      builder: (context) => const Stack(
+            alignment: Alignment.center,
+            children: [
+              ModalBarrier(dismissible: false, color: Colors.black26),
+              CircularProgressIndicator(),
+            ],
+          ));
+  navigatorKey.currentState!.overlay!.insert(entry);
+  return entry;
+}
+
+/// Shows fetched credentials with their real values; they are only stored if the user accepts.
+Future<void> offerAndStoreCredentials(List<ReceivedCredential> received) async {
+  if (received.isEmpty) return;
+
+  var res = await showCupertinoModalPopup(
+    context: navigatorKey.currentContext!,
+    barrierColor: Colors.white,
+    builder: (BuildContext context) => CredentialOfferDialogNew(
+        credentials: received.map((e) => e.vc).toList()),
+  );
+  if (res != true) return;
+
+  var wallet =
+      Provider.of<WalletProvider>(navigatorKey.currentContext!, listen: false);
+  for (var r in received) {
+    wallet.storeCredential(r.vc, r.did, isoMdlData: r.isoMdlData);
+    wallet.storeExchangeHistoryEntry(r.did, DateTime.now(), 'issue', r.issuer);
+
+    showSuccessMessage(
+        AppLocalizations.of(navigatorKey.currentContext!)!.credentialReceived,
+        r.name);
+  }
 }
 
 Future<void> handleOfferOid(String offerUri) async {
@@ -204,35 +248,35 @@ Future<void> handleOfferOid(String offerUri) async {
 
   logger.d(offeredCredentials);
 
+  var requestTan =
+      (offer.grants?[GrantType.preAuthType] as PreAuthCodeGrant?)?.txCode ??
+          false;
+  // without login and TAN nothing is needed from the user yet: the credentials
+  // are fetched right away and shown with their real values before storing them
+  var fetchDirectly = !requestTan &&
+      (offer.grants?.containsKey(GrantType.preAuthType) ?? false) &&
+      !(offer.grants?.containsKey(GrantType.authType) ?? false);
+
   dynamic res = true;
   res = await Future.delayed(const Duration(seconds: 1), () async {
+    if (fetchDirectly) return true;
     return await showCupertinoModalPopup(
       context: navigatorKey.currentContext!,
       barrierColor: Colors.white,
       builder: (BuildContext context) => CredentialOfferDialogNew(
           oidcIssuer: issuerString,
           isOid: true,
-          requestOidcTan: offer.grants != null &&
-              offer.grants!.containsKey(GrantType.preAuthType) &&
-              (offer.grants![GrantType.preAuthType] as PreAuthCodeGrant)
-                      .txCode !=
-                  null &&
-              (offer.grants![GrantType.preAuthType] as PreAuthCodeGrant)
-                  .txCode!,
-          credentials: offeredCredentials
-              .map((e) => VerifiableCredential(
-                  context: [credentialsV1Iri],
-                  type: e.credentialType ?? [],
-                  issuer: {'OidEndpoint': issuerString, 'id': issuerString},
-                  credentialSubject: e.claimDescriptions != null
-                      ? getClaimsFromDescriptionObject(e.claimDescriptions!)
-                      : findClaims(e.claims),
-                  issuanceDate: DateTime.now()))
+          requestOidcTan: requestTan,
+          credentials: const [],
+          previews: offeredCredentials
+              .map((e) => OfferedCredentialPreview(
+                  e.display?.firstOrNull?.name ?? e.credentialId ?? '',
+                  offeredClaimNames(e)))
               .toList()),
     );
   });
 
-  if (res is String || res) {
+  if (res is String || res == true) {
     logger.d(res);
     logger.d(issuerString);
     logger.d(offer.credentials);
@@ -403,49 +447,64 @@ Future<void> handleOfferOid(String offerUri) async {
       }
     } else if (offer.grants != null &&
         offer.grants!.containsKey(GrantType.preAuthType)) {
-      var authServerMeta = await getAuthServerMetaData(authserver);
+      var received = <ReceivedCredential>[];
+      var loading = showLoadingOverlay();
+      try {
+        var authServerMeta = await getAuthServerMetaData(authserver);
 
-      var tokenEndpoint =
-          authServerMeta?['token_endpoint'] ?? '$authserver/token';
+        var tokenEndpoint =
+            authServerMeta?['token_endpoint'] ?? '$authserver/token';
 
-      logger.d(tokenEndpoint);
+        logger.d(tokenEndpoint);
 
-      var preAuthGrant =
-          offer.grants![GrantType.preAuthType] as PreAuthCodeGrant;
-      //send token Request
-      var preAuthCode = preAuthGrant.preAuthCode;
+        var preAuthGrant =
+            offer.grants![GrantType.preAuthType] as PreAuthCodeGrant;
+        //send token Request
+        var preAuthCode = preAuthGrant.preAuthCode;
 
-      logger.d(preAuthCode);
-      logger.d('Token-Endpoint: $tokenEndpoint');
+        logger.d(preAuthCode);
+        logger.d('Token-Endpoint: $tokenEndpoint');
 
-      var tokenRes = await post(Uri.parse(tokenEndpoint),
-              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-              body:
-                  'grant_type=${GrantType.preAuthType}&pre-authorized_code=$preAuthCode${preAuthGrant.txCode != null && preAuthGrant.txCode! ? '&user_pin=$res' : ''}')
-          .timeout(const Duration(seconds: 20), onTimeout: () {
-        return Response('Timeout', 400);
-      });
-      if (tokenRes.statusCode == 200) {
-        logger.d(jsonDecode(tokenRes.body));
-        OidTokenResponse tokenResponse =
-            OidTokenResponse.fromJson(tokenRes.body);
+        var tokenRes = await post(Uri.parse(tokenEndpoint),
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body:
+                    'grant_type=${GrantType.preAuthType}&pre-authorized_code=$preAuthCode${preAuthGrant.txCode != null && preAuthGrant.txCode! ? '&user_pin=$res' : ''}')
+            .timeout(const Duration(seconds: 20), onTimeout: () {
+          return Response('Timeout', 400);
+        });
+        if (tokenRes.statusCode == 200) {
+          logger.d(jsonDecode(tokenRes.body));
+          OidTokenResponse tokenResponse =
+              OidTokenResponse.fromJson(tokenRes.body);
 
-        logger.d('Access-Token : ${tokenResponse.accessToken}');
+          logger.d('Access-Token : ${tokenResponse.accessToken}');
 
-        for (var credMetadata in offeredCredentials) {
-          getCredential(issuerString, issuerMetadata, credMetadata,
-              tokenResponse, null, null, null, null);
+          // one after the other, all of them are shown together afterwards
+          for (var credMetadata in offeredCredentials) {
+            var credential = await getCredential(issuerString, issuerMetadata,
+                credMetadata, tokenResponse, null, null, null, null);
+            if (credential != null) received.add(credential);
+          }
+        } else {
+          logger.d(tokenRes.statusCode);
+          logger.d(tokenRes.body);
+
+          showErrorMessage(
+              AppLocalizations.of(navigatorKey.currentContext!)!.oidAuthFailed,
+              AppLocalizations.of(navigatorKey.currentContext!)!
+                  .oidAuthFailedNote);
+          return;
         }
-      } else {
-        logger.d(tokenRes.statusCode);
-        logger.d(tokenRes.body);
-
+      } catch (e) {
+        logger.d(e);
         showErrorMessage(
             AppLocalizations.of(navigatorKey.currentContext!)!.oidAuthFailed,
             AppLocalizations.of(navigatorKey.currentContext!)!
                 .oidAuthFailedNote);
-        return;
+      } finally {
+        loading.remove();
       }
+      await offerAndStoreCredentials(received);
     } else {
       logger.d('Unbekannte Authentifizierungsmethode');
       showErrorMessage(
@@ -596,7 +655,7 @@ Future<void> handleRedirect(String uri, [String? dpopNonce]) async {
     // var payload = decoded.accessToken!.split('.')[1];
     // logger.d(
     //     'decodedPayload: ${jsonDecode(utf8.decode((base64Decode(addPaddingToBase64(payload)))))}');
-    getCredential(
+    var credential = await getCredential(
         removeTrailingSlash(offer.credentialIssuer),
         null,
         credentialMetadata.first,
@@ -605,6 +664,7 @@ Future<void> handleRedirect(String uri, [String? dpopNonce]) async {
         dpopDid,
         dpopJti,
         tokenRes.headers['dpop-nonce']);
+    if (credential != null) await offerAndStoreCredentials([credential]);
   } else {
     logger.d('Error token request: ${tokenRes.statusCode} / ${tokenRes.body}');
     showErrorMessage(
@@ -698,7 +758,7 @@ Future<(String, dynamic, KeyType)> buildJwt(
   return (credentialDid, jws.toCompactSerialization(), keyType);
 }
 
-Future<void> getCredential(
+Future<ReceivedCredential?> getCredential(
     String credentialIssuer,
     CredentialIssuerMetaData? metadata,
     CredentialsSupportedObject credentialMetadata,
@@ -723,7 +783,7 @@ Future<void> getCredential(
           AppLocalizations.of(navigatorKey.currentContext!)!.oidMetadataError,
           AppLocalizations.of(navigatorKey.currentContext!)!
               .oidMetadataErrorNote);
-      return;
+      return null;
     }
 
     metadata = CredentialIssuerMetaData.fromJson(issuerMetaReq.body);
@@ -739,14 +799,14 @@ Future<void> getCredential(
           AppLocalizations.of(navigatorKey.currentContext!)!
               .credentialDownloadFailed,
         );
-        return;
+        return null;
       }
     } else {
       showErrorMessage(
         AppLocalizations.of(navigatorKey.currentContext!)!
             .credentialDownloadFailed,
       );
-      return;
+      return null;
     }
   }
   if (tokenResponse.cNonce == null) {
@@ -797,7 +857,7 @@ Future<void> getCredential(
           AppLocalizations.of(navigatorKey.currentContext!)!
               .credentialDownloadFailed,
         );
-        return;
+        return null;
       }
     }
     // }
@@ -860,7 +920,7 @@ Future<void> getCredential(
       AppLocalizations.of(navigatorKey.currentContext!)!
           .credentialDownloadFailed,
     );
-    return;
+    return null;
   }
 
   var credentialRequest = OidCredentialRequest(
@@ -961,7 +1021,7 @@ Future<void> getCredential(
           AppLocalizations.of(navigatorKey.currentContext!)!
               .credentialDownloadFailed,
         );
-        return;
+        return null;
       }
     } else {
       try {
@@ -971,7 +1031,7 @@ Future<void> getCredential(
         logger.d(e);
         showErrorMessage(AppLocalizations.of(navigatorKey.currentContext!)!
             .credentialDownloadFailed);
-        return;
+        return null;
       }
     }
     var format = credentialMetadata.format;
@@ -982,7 +1042,7 @@ Future<void> getCredential(
         logger.d('No deferred endpoint');
         showErrorMessage(AppLocalizations.of(navigatorKey.currentContext!)!
             .credentialDownloadFailed);
-        return;
+        return null;
       }
       logger.d('deferred request after 3 seconds');
       Timer(
@@ -999,7 +1059,7 @@ Future<void> getCredential(
               decryptionKey));
     } else {
       try {
-        storeCredential(
+        return await verifyCredential(
             format,
             decodedCredentialResponse.credential ??
                 decodedCredentialResponse.credentials?.first.credential,
@@ -1017,8 +1077,8 @@ Future<void> getCredential(
     logger.d(credentialResponse.body);
     showErrorMessage(AppLocalizations.of(navigatorKey.currentContext!)!
         .credentialDownloadFailed);
-    return;
   }
+  return null;
 }
 
 OidCredentialResponse decryptResponse(
@@ -1137,8 +1197,13 @@ sendDeferredRequest(
       decodedCredentialResponse =
           OidCredentialResponse.fromJson(credentialResponse.body);
     }
-    storeCredential(format, decodedCredentialResponse.credential, credentialDid,
-        wallet, credentialIssuer);
+    var credential = await verifyCredential(
+        format,
+        decodedCredentialResponse.credential,
+        credentialDid,
+        wallet,
+        credentialIssuer);
+    if (credential != null) await offerAndStoreCredentials([credential]);
   } else {
     logger.d('${credentialResponse.statusCode} / ${credentialResponse.body}');
     var parsedBody = jsonDecode(credentialResponse.body);
@@ -1164,8 +1229,12 @@ sendDeferredRequest(
   }
 }
 
-storeCredential(String format, dynamic credential, String credentialDid,
-    WalletProvider wallet, String credentialIssuer) async {
+Future<ReceivedCredential?> verifyCredential(
+    String format,
+    dynamic credential,
+    String credentialDid,
+    WalletProvider wallet,
+    String credentialIssuer) async {
   if (format == OidCredentialFormat.msoMdoc) {
     printWrapped(credential);
     logger.d(cborDecode(base64Decode(addPaddingToBase64(credential))));
@@ -1183,7 +1252,7 @@ storeCredential(String format, dynamic credential, String credentialDid,
             AppLocalizations.of(navigatorKey.currentContext!)!.wrongCredential,
             AppLocalizations.of(navigatorKey.currentContext!)!
                 .wrongCredentialNote2);
-        return;
+        return null;
       }
       logger.d(wallet.getOsKeyStoreIdForDid(did));
       var credSubject = <String, dynamic>{'id': credentialDid};
@@ -1222,17 +1291,9 @@ storeCredential(String format, dynamic credential, String credentialDid,
       //   return;
       // }
 
-      wallet.storeCredential(
-        vc,
-        credentialDid,
-        isoMdlData: '$isoPrefix:${base64Encode(doc.toEncodedCbor())}',
-      );
-      wallet.storeExchangeHistoryEntry(
-          credentialDid, DateTime.now(), 'issue', credentialIssuer);
-
-      showSuccessMessage(
-          AppLocalizations.of(navigatorKey.currentContext!)!.credentialReceived,
-          signedData.docType);
+      return ReceivedCredential(
+          vc, credentialDid, credentialIssuer, signedData.docType,
+          isoMdlData: '$isoPrefix:${base64Encode(doc.toEncodedCbor())}');
     } else {
       showErrorMessage(
           AppLocalizations.of(navigatorKey.currentContext!)!.wrongCredential,
@@ -1247,7 +1308,7 @@ storeCredential(String format, dynamic credential, String credentialDid,
     } catch (e) {
       showErrorMessage(AppLocalizations.of(navigatorKey.currentContext!)!
           .credentialDownloadFailed);
-      return;
+      return null;
     }
     logger.d(parsed.jsonContent());
     var iss = parsed.jsonContent()['payload']['iss'];
@@ -1261,7 +1322,7 @@ storeCredential(String format, dynamic credential, String credentialDid,
       showErrorMessage(
         AppLocalizations.of(navigatorKey.currentContext!)!.wrongCredential,
       );
-      return;
+      return null;
     }
 
     var data = jsonDecode(metaRes.body);
@@ -1285,7 +1346,7 @@ storeCredential(String format, dynamic credential, String credentialDid,
           AppLocalizations.of(navigatorKey.currentContext!)!.wrongCredential,
           AppLocalizations.of(navigatorKey.currentContext!)!
               .wrongCredentialNote);
-      return;
+      return null;
     }
 
     var cnf = sd.confirmation!.toJson();
@@ -1298,7 +1359,7 @@ storeCredential(String format, dynamic credential, String credentialDid,
           AppLocalizations.of(navigatorKey.currentContext!)!.wrongCredential,
           AppLocalizations.of(navigatorKey.currentContext!)!
               .wrongCredentialNote2);
-      return;
+      return null;
     }
 
     var claims = sd.additionalClaims ?? {};
@@ -1326,15 +1387,8 @@ storeCredential(String format, dynamic credential, String credentialDid,
     //   return;
     // }
 
-    wallet.storeCredential(vc, restoredDid,
+    return ReceivedCredential(vc, restoredDid, credentialIssuer, type,
         isoMdlData: '$sdPrefix:$credential');
-    wallet.storeExchangeHistoryEntry(
-        credentialDid, DateTime.now(), 'issue', credentialIssuer);
-
-    showSuccessMessage(
-        AppLocalizations.of(navigatorKey.currentContext!)!.credentialReceived,
-        type);
-    return;
   } else {
     logger.d(credential);
     var asVc = VerifiableCredential.fromJson(credential);
@@ -1347,7 +1401,7 @@ storeCredential(String format, dynamic credential, String credentialDid,
         AppLocalizations.of(navigatorKey.currentContext!)!.wrongCredential,
         AppLocalizations.of(navigatorKey.currentContext!)!.wrongCredentialNote,
       );
-      return;
+      return null;
     }
 
     logger.d(verified);
@@ -1355,21 +1409,16 @@ storeCredential(String format, dynamic credential, String credentialDid,
       var credDid = asVc.credentialSubject['id'];
       logger.d(credDid);
 
-      wallet.storeCredential(asVc, credDid);
-      wallet.storeExchangeHistoryEntry(
-          credDid, DateTime.now(), 'issue', credentialIssuer);
-
-      showSuccessMessage(
-          AppLocalizations.of(navigatorKey.currentContext!)!.credentialReceived,
-          getTypeToShow(asVc.type));
+      return ReceivedCredential(
+          asVc, credDid, credentialIssuer, getTypeToShow(asVc.type));
     } else {
       showErrorMessage(
         AppLocalizations.of(navigatorKey.currentContext!)!.wrongCredential,
         AppLocalizations.of(navigatorKey.currentContext!)!.wrongCredentialNote,
       );
-      return;
     }
   }
+  return null;
 }
 
 sendErrorResponse(String responseUri, String mode, String errorCode) {
