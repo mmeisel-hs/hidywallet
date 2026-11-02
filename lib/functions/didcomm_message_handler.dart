@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:dart_ssi/credentials.dart';
 import 'package:dart_ssi/did.dart';
 import 'package:dart_ssi/didcomm.dart';
 import 'package:dart_ssi/wallet.dart';
@@ -12,7 +11,6 @@ import 'package:id_ideal_wallet/basicUi/standard/payment_finished.dart';
 import 'package:id_ideal_wallet/constants/server_address.dart';
 import 'package:id_ideal_wallet/functions/discover_feature.dart';
 import 'package:id_ideal_wallet/functions/issue_credential.dart';
-import 'package:id_ideal_wallet/functions/payment_utils.dart';
 import 'package:id_ideal_wallet/functions/present_proof.dart';
 import 'package:id_ideal_wallet/functions/util.dart';
 import 'package:id_ideal_wallet/provider/wallet_provider.dart';
@@ -170,29 +168,6 @@ Future<bool> handleEmptyMessage(
     DidcommPlaintextMessage message, WalletProvider wallet) async {
   logger.d('got empty message');
 
-  if (message.ack != null && message.ack!.isNotEmpty) {
-    var pId = message.threadId ?? message.id;
-
-    var previous = wallet.getConversation(pId);
-    logger.d(previous);
-    if (previous != null &&
-        previous.protocol == DidcommProtocol.presentProof.value) {
-      // assume ack for presentation, check if payment follows
-      var last = DidcommPlaintextMessage.fromJson(previous.lastMessage);
-      logger.d('${message.ack} contains? ${last.id}');
-      if (message.ack!.contains(last.id) &&
-          message.attachments != null &&
-          message.attachments!.isNotEmpty) {
-        var paymentReq = message.attachments!.where((element) =>
-            element.format != null && element.format == 'lnInvoice');
-        if (paymentReq.isNotEmpty) {
-          var invoice = paymentReq.first.data.json!['lnInvoice'] ?? '';
-          logger.d(invoice);
-          payInvoiceInteraction(invoice);
-        }
-      }
-    }
-  }
   return true;
 }
 
@@ -407,9 +382,7 @@ String? determineReplyUrl(String? replyUrl, List<String>? replyTo,
 
 sendMessage(String myDid, String? otherEndpoint, WalletProvider wallet,
     DidcommPlaintextMessage message, String receiverDid,
-    {String? lnInvoice,
-    List<VerifiableCredential>? paymentCards,
-    bool silent = false}) async {
+    {bool silent = false}) async {
   if (otherEndpoint == null) {
     showErrorMessage(
         AppLocalizations.of(navigatorKey.currentContext!)!.sendFailed,
@@ -492,20 +465,6 @@ sendMessage(String myDid, String? otherEndpoint, WalletProvider wallet,
               AppLocalizations.of(navigatorKey.currentContext!)!
                   .presentationSuccessful,
               type);
-        }
-
-        if (lnInvoice != null && paymentCards != null) {
-          logger.d('have to pay invoice');
-          var paymentId = paymentCards.first.id!;
-          var lnAdminKey = wallet.getLnAdminKey(paymentId);
-          try {
-            await payInvoice(lnAdminKey!, lnInvoice);
-            logger.d('invoice paid');
-          } catch (e) {
-            showErrorMessage(AppLocalizations.of(navigatorKey.currentContext!)!
-                .paymentFailed);
-            logger.e(e);
-          }
         }
       }
       logger.d(res.headers);

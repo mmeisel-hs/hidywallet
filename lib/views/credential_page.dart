@@ -345,61 +345,29 @@ class ContextCardState extends State<ContextCard> {
           switchOutCurve: Curves.easeInBack.flipped,
           layoutBuilder: (widget, list) => Stack(children: [widget!, ...list]),
           child: back
-              ? widget.context.type.contains('PaymentContext')
-                  ? PaymentCard(
-                      key: const ValueKey(false),
-                      deleteOnTap: _deleteCredential,
-                      balance:
-                          Provider.of<WalletProvider>(context, listen: false)
-                                  .balance[widget.context.id]
-                                  ?.toStringAsFixed(2) ??
-                              '0.0',
-                      cardTitle: widget.context.credentialSubject['name'],
-                      cardTitleColor: widget
-                                  .context.credentialSubject['overlaycolor'] !=
-                              null
+              ? ContextCredentialCardBack(
+                  credential: widget.context,
+                  key: const ValueKey(false),
+                  deleteOnTap: _deleteCredential,
+                  cardTitle: '',
+                  cardTitleColor:
+                      widget.context.credentialSubject['overlaycolor'] != null
                           ? HexColor.fromHex(
                               widget.context.credentialSubject['overlaycolor'])
                           : Colors.black,
-                      backgroundColor: widget
-                                  .context.credentialSubject['backsidecolor'] !=
-                              null
+                  backgroundColor:
+                      widget.context.credentialSubject['backsidecolor'] != null
                           ? HexColor.fromHex(
                               widget.context.credentialSubject['backsidecolor'])
                           : const Color.fromARGB(255, 233, 224, 200),
-                      subjectName: '',
-                      bottomLeftText: const SizedBox(
-                        width: 0,
-                      ),
-                      bottomRightText: const SizedBox(
-                        width: 0,
-                      ),
-                    )
-                  : ContextCredentialCardBack(
-                      credential: widget.context,
-                      key: const ValueKey(false),
-                      deleteOnTap: _deleteCredential,
-                      cardTitle: '',
-                      cardTitleColor: widget
-                                  .context.credentialSubject['overlaycolor'] !=
-                              null
-                          ? HexColor.fromHex(
-                              widget.context.credentialSubject['overlaycolor'])
-                          : Colors.black,
-                      backgroundColor: widget
-                                  .context.credentialSubject['backsidecolor'] !=
-                              null
-                          ? HexColor.fromHex(
-                              widget.context.credentialSubject['backsidecolor'])
-                          : const Color.fromARGB(255, 233, 224, 200),
-                      subjectName: widget.context.credentialSubject['name'],
-                      bottomLeftText: const SizedBox(
-                        width: 0,
-                      ),
-                      bottomRightText: const SizedBox(
-                        width: 0,
-                      ),
-                    )
+                  subjectName: widget.context.credentialSubject['name'],
+                  bottomLeftText: const SizedBox(
+                    width: 0,
+                  ),
+                  bottomRightText: const SizedBox(
+                    width: 0,
+                  ),
+                )
               : ContextCredentialCard(
                   key: const ValueKey(true),
                   cardTitle: '',

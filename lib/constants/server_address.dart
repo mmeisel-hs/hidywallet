@@ -84,7 +84,7 @@ var stylingEndpoint = 'https://hidy.app/walletcontext/layouts';
 var termsVersionEndpoint = 'https://hidy.app/walletcontext/terms';
 var messagingBackend =
     'https://test.hidy.app/walletcontext/fbm/registeraccount';
-String versionNumber = '4.2.9';
+String versionNumber = '4.2.10';
 String baseUrl = 'https://hidy.app';
 bool testBuild = false;
 
@@ -106,8 +106,6 @@ bool inOidcTest = false;
 
 var tosEndpoint =
     'https://hidy.eu/${AppLocalizations.of(navigatorKey.currentContext!)!.localeName}/terms';
-
-var lnMainnetEndpoint = 'https://payments.pixeldev.eu';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 

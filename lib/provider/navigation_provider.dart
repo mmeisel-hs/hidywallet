@@ -116,16 +116,6 @@ class NavigationProvider extends ChangeNotifier {
       return;
     }
     // Handle Custom Schemes
-    // if (link.startsWith('lightning:')) {
-    //   handleLink(link.replaceAll('lightning:', ''));
-    // } else if (link.startsWith('LNURL') || link.startsWith('lnurl')) {
-    //   handleLnurl(link);
-    // } else if (link.startsWith('lnbc') || link.startsWith('LNBC')) {
-    //   logger.d('LN-Invoice found');
-    //   payInvoiceInteraction(
-    //     link,
-    //   );
-    // } else
     if (link.startsWith('eudi-openid4ci://authorize')) {
       handleRedirect(link);
     } else if (link.startsWith('openid-credential-offer') ||
@@ -168,19 +158,7 @@ class NavigationProvider extends ChangeNotifier {
         handleWebViewLink(uriToCall);
       } else if (link.contains('redirect')) {
         handleRedirect(link);
-      }
-      // else if (link.contains('/invoice')) {
-      //   var uri = Uri.parse(link);
-      //   var invoice = uri.queryParameters['invoice'];
-      //   if (invoice != null) {
-      //     payInvoiceInteraction(
-      //       invoice,
-      //     );
-      //   } else if (uri.queryParameters.containsKey('lnurl')) {
-      //     handleLnurl(uri.queryParameters['lnurl']!);
-      //   }
-      // }
-      else {
+      } else {
         showErrorMessage(
             AppLocalizations.of(navigatorKey.currentContext!)!.unknownQrCode,
             AppLocalizations.of(navigatorKey.currentContext!)!

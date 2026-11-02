@@ -6,7 +6,6 @@ import 'package:id_ideal_wallet/basicUi/standard/requester_info.dart';
 import 'package:id_ideal_wallet/basicUi/standard/secured_widget.dart';
 import 'package:id_ideal_wallet/basicUi/standard/show_filter_result.dart';
 import 'package:id_ideal_wallet/constants/server_address.dart';
-import 'package:id_ideal_wallet/functions/payment_utils.dart';
 import 'package:id_ideal_wallet/functions/util.dart';
 import 'package:id_ideal_wallet/provider/wallet_provider.dart';
 import 'package:id_ideal_wallet/views/self_issuance.dart';
@@ -23,9 +22,6 @@ class PresentationRequestDialog extends StatefulWidget {
   final String? name, purpose;
   final String otherEndpoint;
   final bool askForBackground;
-  final String? lnInvoice;
-  final Map<String, dynamic>? lnInvoiceRequest;
-  final List<VerifiableCredential>? paymentCards;
   final X509Certificate? requesterCert;
   final PresentationDefinition definition;
 
@@ -37,9 +33,6 @@ class PresentationRequestDialog extends StatefulWidget {
     this.askForBackground = false,
     this.name,
     this.purpose,
-    this.lnInvoice,
-    this.lnInvoiceRequest,
-    this.paymentCards,
     this.requesterCert,
   });
 
@@ -56,7 +49,6 @@ class PresentationRequestDialogState extends State<PresentationRequestDialog> {
   bool send = false;
   bool fulfillable = true;
   bool backgroundAllow = true;
-  String amount = '';
 
   @override
   initState() {
@@ -116,21 +108,6 @@ class PresentationRequestDialogState extends State<PresentationRequestDialog> {
       }
 
       selected.add(selectedCreds);
-    }
-
-    // getAmount();
-  }
-
-  Future<void> getAmount() async {
-    if (widget.lnInvoice != null && widget.paymentCards != null) {
-      var wallet = Provider.of<WalletProvider>(navigatorKey.currentContext!,
-          listen: false);
-      var paymentId = widget.paymentCards!.first.id!;
-      var lnInKey = wallet.getLnInKey(paymentId);
-      var i = await decodeInvoice(lnInKey!, widget.lnInvoice!);
-      amount = i.amount.toSat().toStringAsFixed(2);
-      logger.d(amount);
-      setState(() {});
     }
   }
 
@@ -279,100 +256,6 @@ class PresentationRequestDialogState extends State<PresentationRequestDialog> {
           ),
         ),
       );
-    }
-
-    if (widget.lnInvoice != null) {
-      childList.add(const SizedBox(
-        height: 10,
-      ));
-      childList.add(Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: Colors.grey.shade200,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            child: RichText(
-              text: TextSpan(
-                style: Theme.of(context).primaryTextTheme.titleMedium,
-                children: [
-                  TextSpan(
-                    text: AppLocalizations.of(navigatorKey.currentContext!)!
-                        .paymentInformation,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  WidgetSpan(
-                    child: Container(
-                      padding: const EdgeInsets.only(
-                        left: 1,
-                        bottom: 5,
-                      ),
-                      child: const Icon(
-                        Icons.error_outline,
-                        size: 18,
-                        // color: Colors.redAccent.shade700,
-                      ),
-                    ),
-                  ),
-                  TextSpan(
-                      text:
-                          '\n${AppLocalizations.of(navigatorKey.currentContext!)!.paymentInformationDetail}',
-                      style: Theme.of(context).primaryTextTheme.bodySmall),
-                  TextSpan(
-                      text: '$amount sat',
-                      style: Theme.of(context).primaryTextTheme.titleLarge),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ));
-    }
-
-    if (widget.lnInvoiceRequest != null) {
-      childList.add(const SizedBox(
-        height: 10,
-      ));
-      childList.add(Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: Colors.grey.shade200,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            child: RichText(
-              text: TextSpan(
-                style: Theme.of(context).primaryTextTheme.titleMedium,
-                children: [
-                  const TextSpan(
-                    text: 'Information',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  TextSpan(
-                      text:
-                          '\n${AppLocalizations.of(navigatorKey.currentContext!)!.funding1}',
-                      style: Theme.of(context).primaryTextTheme.bodySmall),
-                  TextSpan(
-                      text: ' ${widget.lnInvoiceRequest?['amount']} sat ',
-                      style: Theme.of(context).primaryTextTheme.titleLarge),
-                  TextSpan(
-                      text: AppLocalizations.of(navigatorKey.currentContext!)!
-                          .funding2,
-                      style: Theme.of(context).primaryTextTheme.bodySmall),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ));
     }
 
     return childList;
@@ -551,9 +434,6 @@ class PresentationRequestDialogState extends State<PresentationRequestDialog> {
                   reject: reject)
             else
               FooterButtons(
-                positiveText: widget.lnInvoice != null
-                    ? AppLocalizations.of(context)!.orderWithPayment
-                    : null,
                 negativeFunction: reject,
                 positiveFunction: () async {
                   try {

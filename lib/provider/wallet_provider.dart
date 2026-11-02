@@ -12,14 +12,10 @@ import 'package:dart_ssi/wallet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart';
-import 'package:id_ideal_wallet/basicUi/standard/currency_display.dart';
-import 'package:id_ideal_wallet/basicUi/standard/modal_dismiss_wrapper.dart';
-import 'package:id_ideal_wallet/basicUi/standard/payment_finished.dart';
 import 'package:id_ideal_wallet/constants/navigation_pages.dart';
 import 'package:id_ideal_wallet/constants/root_certificates.dart';
 import 'package:id_ideal_wallet/constants/server_address.dart';
 import 'package:id_ideal_wallet/functions/didcomm_message_handler.dart';
-import 'package:id_ideal_wallet/functions/payment_utils.dart';
 import 'package:id_ideal_wallet/provider/mdoc_provider.dart';
 import 'package:id_ideal_wallet/provider/navigation_provider.dart';
 import 'package:id_ideal_wallet/provider/notification_provider.dart';
@@ -49,12 +45,7 @@ class WalletProvider extends ChangeNotifier {
 
   SortingType sortingType = SortingType.dateDown;
 
-  Map<String, List<ExchangeHistoryEntry>> lastPayments = {};
-  Map<String, double> balance = {};
-  Timer? paymentTimer;
-
   List<VerifiableCredential> credentials = [];
-  List<VerifiableCredential> paymentCredentials = [];
   List<Credential> isoMdocCredentials = [];
   List<Credential> sdJwtCredentials = [];
   List<VerifiableCredential> w3cCredentials = [];
@@ -743,138 +734,8 @@ class WalletProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String? getLnInKey(String paymentId) {
-    return _wallet.getConfigEntry('lnInKey$paymentId');
-  }
-
-  String? getLnAdminKey(String paymentId) {
-    return _wallet.getConfigEntry('lnAdminKey$paymentId');
-  }
-
-  void getLnBalance(String paymentId) async {
-    var a = await getBalance(getLnInKey(paymentId)!);
-    balance[paymentId] = a.toSat();
-    notifyListeners();
-  }
-
-  void storeLnAccount(String paymentId, Map<String, dynamic> accountData,
-      {bool isMainnet = false}) async {
-    var wallets = accountData['wallets'] as List;
-    var w = wallets.first;
-    var lnAdminKey = w['adminkey'];
-    var lnInKey = w['inkey'];
-
-    if (lnAdminKey == null || lnInKey == null) {
-      throw Exception('AdminKey or inKey null - this should not happen');
-      // Todo message to user
-    }
-
-    await _wallet.storeConfigEntry('lnAdminKey$paymentId', lnAdminKey!);
-    await _wallet.storeConfigEntry('lnInKey$paymentId', lnInKey!);
-    await _wallet.storeConfigEntry(
-        'lnPaymentType$paymentId', isMainnet ? 'mainnet' : 'testnet');
-    await _wallet.storeConfigEntry(
-        'lnDetails$paymentId', jsonEncode(accountData));
-
-    notifyListeners();
-  }
-
-  void storePayment(String paymentId, String action, String otherParty,
-      {List<String>? belongingCredentials, DateTime? timestamp}) async {
-    _wallet.storeExchangeHistoryEntry('paymentHistory$paymentId',
-        timestamp ?? DateTime.now(), action, otherParty, belongingCredentials);
-    _updateLastThreePayments(paymentId);
-    getLnBalance(paymentId);
-    notifyListeners();
-  }
-
-  void newPayment(
-      String paymentId, String paymentHash, String memo, SatoshiAmount amount) {
-    paymentTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      var paid = await isInvoicePaid(getLnInKey(paymentId)!, paymentHash);
-      logger.d(paymentHash);
-      if (paid) {
-        timer.cancel();
-        storePayment(paymentId, '+${amount.toSat()}',
-            memo == '' ? 'Lightning Invoice' : memo);
-        paymentTimer = null;
-        showModalBottomSheet(
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(10), topRight: Radius.circular(10)),
-            ),
-            context: navigatorKey.currentContext!,
-            builder: (context) {
-              return ModalDismissWrapper(
-                child: PaymentFinished(
-                  headline: AppLocalizations.of(navigatorKey.currentContext!)!
-                      .paymentReceived,
-                  success: true,
-                  amount: CurrencyDisplay(
-                      amount: "+${amount.toSat()}",
-                      symbol: 'sat',
-                      mainFontSize: 35,
-                      centered: true),
-                ),
-              );
-            });
-      }
-    });
-  }
-
-  void _updateLastThreePayments(String paymentId) {
-    var payments = getAllPayments(paymentId);
-    if (payments.length > 1) {
-      payments.sort((e1, e2) {
-        if (e1.timestamp.isBefore(e2.timestamp)) {
-          return 1;
-        } else if (e1.timestamp.isAfter(e2.timestamp)) {
-          return -1;
-        } else {
-          return 0;
-        }
-      });
-    }
-    if (payments.length <= 3) {
-      lastPayments[paymentId] = payments;
-    } else {
-      lastPayments[paymentId] = [payments.first, payments[1], payments[2]];
-    }
-  }
-
-  void reIssuePaymentContext(
-      VerifiableCredential old, Map<String, dynamic> newContent) async {
-    var did = old.id!;
-    var contextId =
-        old.credentialSubject['paymentType'] == 'LightningMainnetPayment'
-            ? '2'
-            : '3';
-    var contextCred = VerifiableCredential(
-        context: [credentialsV1Iri, schemaOrgIri],
-        type: ['VerifiableCredential', 'ContextCredential', 'PaymentContext'],
-        issuer: did,
-        id: did,
-        credentialSubject: {
-          'id': did,
-          'contextId': contextId,
-          'paymentType': old.credentialSubject['paymentType'],
-          ...newContent
-        },
-        issuanceDate: DateTime.now());
-
-    var (signer, proofType) =
-        await my_util.getCredentialSigningStuff(this, did);
-    await contextCred.sign(signer, proofType);
-    //var storageCred = wallet.getCredential(did);
-    storeCredential(contextCred, did);
-    storeExchangeHistoryEntry(did, DateTime.now(), 'update', did);
-
-    notifyListeners();
-  }
-
   Future<void> _buildCredentialList() async {
     credentials = [];
-    paymentCredentials = [];
     isoMdocCredentials = [];
     sdJwtCredentials = [];
     w3cCredentials = [];
@@ -905,18 +766,16 @@ class WalletProvider extends ChangeNotifier {
           w3cCredentials.add(vc);
         }
 
-        if (vc.type.contains('PaymentContext')) {
-          paymentCredentials.add(vc);
-          _updateLastThreePayments(vc.id!);
-          getLnBalance(vc.id!);
-        } else if (vc.type.contains('HidyPseudonym')) {
+        if (vc.type.contains('HidyPseudonym')) {
           if (vc.credentialSubject['webview'] != null) {
             accountVcs[vc.credentialSubject['webview']] = vc;
           }
         } else if (vc.type.contains('Email')) {
           mailCredentials.add(vc);
         } else {
-          if (!vc.type.contains('PaymentReceipt')) {
+          // Lightning accounts of older versions stay in the wallet, but are not shown
+          if (!vc.type.contains('PaymentReceipt') &&
+              !vc.type.contains('PaymentContext')) {
             credentials.add(vc);
             credentialsTypes.add(my_util.getTypeToShow(vc.type));
           }
@@ -925,8 +784,6 @@ class WalletProvider extends ChangeNotifier {
         // TODO: merge w3c and Plaintext credential
       }
     }
-
-    logger.d(paymentCredentials.map((e) => e.id).join(';'));
 
     if (sortingType == SortingType.dateDown ||
         sortingType == SortingType.dateUp) {
@@ -964,12 +821,6 @@ class WalletProvider extends ChangeNotifier {
     sortingType = newType;
     _buildCredentialList();
     notifyListeners();
-  }
-
-  List<ExchangeHistoryEntry> getAllPayments(String paymentId) {
-    return _wallet.getExchangeHistoryEntriesForCredential(
-            'paymentHistory$paymentId') ??
-        [];
   }
 
   void storeConversation(DidcommPlaintextMessage message, String myDid) {

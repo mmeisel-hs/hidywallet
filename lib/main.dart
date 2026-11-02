@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:id_ideal_wallet/basicUi/standard/custom_navigation_item.dart';
 import 'package:id_ideal_wallet/basicUi/standard/theme.dart';
-import 'package:id_ideal_wallet/basicUi/standard/top_up.dart';
 import 'package:id_ideal_wallet/constants/firebase_options.dart';
 import 'package:id_ideal_wallet/constants/navigation_pages.dart';
 import 'package:id_ideal_wallet/constants/server_address.dart';
@@ -25,11 +24,8 @@ import 'package:id_ideal_wallet/views/credential_detail.dart';
 import 'package:id_ideal_wallet/views/credential_page.dart';
 import 'package:id_ideal_wallet/views/identity_overview.dart';
 import 'package:id_ideal_wallet/views/mail_credential_view.dart';
-import 'package:id_ideal_wallet/views/payment_card_overview.dart';
-import 'package:id_ideal_wallet/views/payment_overview.dart';
 import 'package:id_ideal_wallet/views/qr_scanner.dart';
 import 'package:id_ideal_wallet/views/search_new_abo.dart';
-import 'package:id_ideal_wallet/views/send_satoshi_screen.dart';
 import 'package:id_ideal_wallet/views/settings_page.dart';
 import 'package:id_ideal_wallet/views/welcome_screen.dart';
 import 'package:path_provider/path_provider.dart';
@@ -220,11 +216,7 @@ class HomeScreen extends StatelessWidget {
         child: FittedBox(
           child: FloatingActionButton(
             onPressed: () {
-              navigator.changePage([
-                NavigationPage.qrScanner,
-                NavigationPage.sendSatoshi,
-                NavigationPage.topUp
-              ]);
+              navigator.changePage([NavigationPage.qrScanner]);
             },
             backgroundColor: Colors.grey.shade300,
             shape: const CircleBorder(),
@@ -245,8 +237,6 @@ class HomeScreen extends StatelessWidget {
         return const CredentialPage(initialSelection: 'all');
       case NavigationPage.qrScanner:
         return const QrScanner();
-      case NavigationPage.paymentCard:
-        return const PaymentCardOverview();
       case NavigationPage.settings:
         return const SettingsPage();
       case NavigationPage.credentialDetail:
@@ -264,12 +254,6 @@ class HomeScreen extends StatelessWidget {
         );
       case NavigationPage.searchNewAbo:
         return const SearchNewAbo();
-      case NavigationPage.sendSatoshi:
-        return const SendSatoshiScreen();
-      case NavigationPage.topUp:
-        return TopUp(paymentMethod: navigator.credential);
-      case NavigationPage.paymentOverview:
-        return PaymentOverview(paymentContext: navigator.credential!);
       case NavigationPage.ausweis:
         return const AusweisView();
       case NavigationPage.backupOverview:

@@ -116,37 +116,6 @@ Future<bool> handleRequestPresentation(
   var definitionHash = sha256.process(utf8.encode(definitionToHash.toString()));
   logger.d(definitionHash);
 
-  List<VerifiableCredential>? paymentCards;
-  String? invoice;
-  var paymentReq = message.attachments!.where(
-      (element) => element.format != null && element.format == 'lnInvoice');
-  if (paymentReq.isNotEmpty) {
-    invoice = paymentReq.first.data.json?['lnInvoice'];
-    logger.d('invoice: $invoice');
-    if (invoice != null) {
-      paymentCards = wallet.paymentCredentials;
-      if (paymentCards.isEmpty) {
-        showErrorMessage(
-            AppLocalizations.of(navigatorKey.currentContext!)!.noPaymentMethod);
-      }
-    }
-  }
-
-  Map<String, dynamic>? invoiceReq;
-  var lnInvoiceReq = message.attachments!.where((element) =>
-      element.format != null && element.format == 'lnInvoiceRequest');
-  if (lnInvoiceReq.isNotEmpty) {
-    invoiceReq = lnInvoiceReq.first.data.json;
-    logger.d('invoice request: $invoiceReq');
-    if (invoiceReq != null) {
-      paymentCards = wallet.paymentCredentials;
-      if (paymentCards.isEmpty) {
-        showErrorMessage(
-            AppLocalizations.of(navigatorKey.currentContext!)!.noPaymentMethod);
-      }
-    }
-  }
-
   try {
     var filtered = searchCredentialsForPresentationDefinition(definition,
         credentials: creds);
@@ -188,9 +157,6 @@ Future<bool> handleRequestPresentation(
         purpose: definition.purpose,
         otherEndpoint: requester,
         results: filtered,
-        lnInvoice: invoice,
-        paymentCards: paymentCards,
-        lnInvoiceRequest: invoiceReq,
       );
       var (_, finalSend) = await navigateClassic(target);
       if (finalSend != null) {
@@ -249,40 +215,12 @@ sendPresentation(List<FilterResult> finalSend, String nonce,
       verifiablePresentation: [vp],
       threadId: message.threadId ?? message.id,
       parentThreadId: message.parentThreadId);
-  // logger.d(widget.lnInvoiceRequest);
-  // logger.d(widget.paymentCards);
-  // if (widget.lnInvoiceRequest != null && widget.paymentCards != null) {
-  //   logger.d('generate invoice');
-  //   var paymentId = widget.paymentCards!.first.id!;
-  //   var lnInKey = wallet.getLnInKey(paymentId);
-  //   var invoice = await createInvoice(
-  //       lnInKey!,
-  //       SatoshiAmount.fromUnitAndValue(
-  //           widget.lnInvoiceRequest!['amount'], SatoshiUnit.sat),
-  //       memo: widget.lnInvoiceRequest!['memo'] ?? '');
-  //   var index = invoice['checking_id'];
-  //   logger.d(index);
-  //   wallet.newPayment(
-  //     paymentId,
-  //     index,
-  //     widget.lnInvoiceRequest!['memo'] ?? '',
-  //     SatoshiAmount.fromUnitAndValue(
-  //         widget.lnInvoiceRequest!['amount'], SatoshiUnit.sat),
-  //   );
-  //
-  //   var paymentAtt = Attachment(
-  //       format: 'lnInvoice',
-  //       data: AttachmentData(json: {
-  //         'type': 'lnInvoice',
-  //         'lnInvoice': invoice['payment_request']
-  //       }));
-  //
-  //   presentationMessage.attachments?.add(paymentAtt);
-  // }
   sendMessage(
-    myDid, endpoint, wallet, presentationMessage,
+    myDid,
+    endpoint,
+    wallet,
+    presentationMessage,
     message.from!,
-    //lnInvoice: widget.lnInvoice, paymentCards: widget.paymentCards
   );
 
   for (var cred in vp.verifiableCredential ?? <VerifiableCredential>[]) {

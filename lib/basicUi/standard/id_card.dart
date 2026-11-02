@@ -11,7 +11,6 @@ import 'package:id_ideal_wallet/provider/wallet_provider.dart';
 import 'package:id_ideal_wallet/views/credential_detail.dart';
 
 import '../../constants/server_address.dart';
-import 'currency_display.dart';
 
 class IdCard extends StatelessWidget {
   const IdCard(
@@ -40,41 +39,26 @@ class IdCard extends StatelessWidget {
       WalletProvider? wallet,
       String? background}) {
     if (credential.type.contains('ContextCredential')) {
-      if (credential.type.contains('PaymentContext')) {
-        return PaymentCard(
-          deleteOnTap: () {},
-          balance: wallet?.balance[credential.id]?.toStringAsFixed(2) ?? '0.0',
-          cardTitle: credential.credentialSubject['name'],
-          subjectName: '',
+      return ContextCredentialCard(
+          backgroundColor: const Color.fromARGB(255, 233, 224, 200),
+          cardTitleColor: credential.credentialSubject['overlaycolor'] != null
+              ? HexColor.fromHex(credential.credentialSubject['overlaycolor'])
+              : const Color.fromARGB(255, 255, 255, 255),
+          cardTitle: '',
+          backgroundImage:
+              credential.credentialSubject['backgroundImage'] != null
+                  ? Image.memory(base64Decode(credential
+                      .credentialSubject['backgroundImage']
+                      .split(',')
+                      .last))
+                  : null,
+          subjectName: credential.credentialSubject['name'],
           bottomLeftText: const SizedBox(
             width: 0,
           ),
           bottomRightText: const SizedBox(
             width: 0,
-          ),
-        );
-      } else {
-        return ContextCredentialCard(
-            backgroundColor: const Color.fromARGB(255, 233, 224, 200),
-            cardTitleColor: credential.credentialSubject['overlaycolor'] != null
-                ? HexColor.fromHex(credential.credentialSubject['overlaycolor'])
-                : const Color.fromARGB(255, 255, 255, 255),
-            cardTitle: '',
-            backgroundImage:
-                credential.credentialSubject['backgroundImage'] != null
-                    ? Image.memory(base64Decode(credential
-                        .credentialSubject['backgroundImage']
-                        .split(',')
-                        .last))
-                    : null,
-            subjectName: credential.credentialSubject['name'],
-            bottomLeftText: const SizedBox(
-              width: 0,
-            ),
-            bottomRightText: const SizedBox(
-              width: 0,
-            ));
-      }
+          ));
     } else if (credential.type.contains('MemberCard')) {
       return MemberCard(
           barcodeType: credential.credentialSubject['barcodeType'],
@@ -689,110 +673,6 @@ class PkPassCard extends IdCard {
               .titleLarge!
               .copyWith(color: cardTitleColor),
         ),
-      ),
-    );
-  }
-
-  @override
-  Widget buildFooter() {
-    return const SizedBox(
-      height: 0,
-    );
-  }
-}
-
-class PaymentCard extends IdCard {
-  final String balance;
-  final void Function()? onReturnTap, deleteOnTap, onUpdateTap;
-
-  const PaymentCard(
-      {super.key,
-      required this.balance,
-      this.deleteOnTap,
-      this.onUpdateTap,
-      super.backgroundColor,
-      super.cardTitleColor,
-      required super.cardTitle,
-      required super.subjectName,
-      required super.bottomLeftText,
-      required super.bottomRightText,
-      this.onReturnTap});
-
-  @override
-  Widget buildCenterOverlay() {
-    return CurrencyDisplay(
-      amount: balance,
-      amountColor: cardTitleColor,
-      symbol: 'sat',
-      centered: true,
-      mainFontSize: 30,
-    );
-  }
-
-  @override
-  Widget buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.only(right: 10, top: 5, left: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          SizedBox(
-            height: 45,
-            width: 45,
-            child: InkWell(
-              onTap: deleteOnTap,
-              child: Icon(
-                Icons.delete_outline_sharp,
-                color: cardTitleColor,
-                size: 35,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              maxLines: 3,
-              cardTitle,
-              overflow: TextOverflow.clip,
-              style: TextStyle(
-                color: cardTitleColor,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          onUpdateTap != null
-              ? SizedBox(
-                  height: 45,
-                  width: 45,
-                  child: InkWell(
-                    onTap: onUpdateTap,
-                    child: Icon(
-                      Icons.upgrade_sharp,
-                      color: cardTitleColor,
-                      size: 35,
-                    ),
-                  ),
-                )
-              : const SizedBox(
-                  width: 0,
-                ),
-          onReturnTap != null
-              ? SizedBox(
-                  height: 45,
-                  width: 45,
-                  child: InkWell(
-                    onTap: onReturnTap,
-                    child: Icon(
-                      color: cardTitleColor,
-                      Icons.change_circle_outlined,
-                      size: 35,
-                    ),
-                  ),
-                )
-              : const SizedBox(
-                  width: 0,
-                )
-        ],
       ),
     );
   }

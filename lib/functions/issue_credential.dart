@@ -3,13 +3,8 @@ import 'package:dart_ssi/didcomm.dart';
 import 'package:dart_ssi/wallet.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:id_ideal_wallet/basicUi/standard/currency_display.dart';
-import 'package:id_ideal_wallet/basicUi/standard/modal_dismiss_wrapper.dart';
-import 'package:id_ideal_wallet/basicUi/standard/payment_finished.dart';
-import 'package:id_ideal_wallet/functions/payment_utils.dart';
 import 'package:id_ideal_wallet/functions/util.dart';
 import 'package:id_ideal_wallet/views/credential_offer_new.dart';
-import 'package:id_ideal_wallet/views/payment_method_selection.dart';
 import 'package:uuid/uuid.dart';
 
 import '../constants/server_address.dart';
@@ -73,58 +68,13 @@ Future<bool> handleOfferCredential(
     myDid = entry.myDid;
   }
 
-  //payment requested?
-  String? toPay;
-  String? invoice;
-  String? paymentId, lnInKey, lnAdminKey;
-
-  if (message.attachments!.length > 1) {
-    logger.d('with payment (or credential manifest + fulfillment)');
-    var paymentReq = message.attachments!.where(
-        (element) => element.format != null && element.format == 'lnInvoice');
-    if (paymentReq.isNotEmpty) {
-      invoice = paymentReq.first.data.json!['lnInvoice'] ?? '';
-
-      var paymentTypes = wallet.paymentCredentials;
-
-      if (paymentTypes.isEmpty) {
-        showErrorMessage(
-          AppLocalizations.of(navigatorKey.currentContext!)!.noPaymentMethod,
-          AppLocalizations.of(navigatorKey.currentContext!)!
-              .noPaymentMethodNote,
-        );
-        return false;
-      }
-
-      // String paymentId;
-      if (paymentTypes.length > 1) {
-        int? selectedIndex =
-            await Future.delayed(const Duration(seconds: 1), () async {
-          return await Navigator.push(
-              navigatorKey.currentContext!,
-              MaterialPageRoute(
-                  builder: (context) =>
-                      PaymentMethodSelector(paymentMethods: paymentTypes)));
-        });
-        logger.d(selectedIndex);
-        if (selectedIndex == null) {
-          return false;
-        } else {
-          paymentId = paymentTypes[selectedIndex].id!;
-        }
-      } else {
-        paymentId = paymentTypes.first.id!;
-      }
-
-      lnInKey = wallet.getLnInKey(paymentId);
-      lnAdminKey = wallet.getLnAdminKey(paymentId);
-      var decoded = await decodeInvoice(lnInKey!, invoice!);
-      toPay = decoded.amount.toSat().toString();
-      logger.d(toPay);
-      logger.d(decoded.amount.milliSatoshi);
-    }
+  // credentials that have to be paid for are not supported
+  if (message.attachments!.any((element) => element.format == 'lnInvoice')) {
+    showErrorMessage(
+        AppLocalizations.of(navigatorKey.currentContext!)!.noPaymentMethod);
+    return false;
   }
-  Map<String, String> paymentDetails = {};
+
   DidcommPlaintextMessage? lastMessage;
   if (entry != null) {
     lastMessage = DidcommPlaintextMessage.fromJson(entry.lastMessage);
@@ -147,77 +97,13 @@ Future<bool> handleOfferCredential(
         credentials: message.detail?.map((e) => e.credential).toList() ??
             message.fulfillment?.verifiableCredential ??
             [],
-        toPay: toPay,
       ),
     );
 
-    //pay the credential
     if (res) {
       for (var entry in message.detail ?? <LdProofVcDetail>[]) {
         if (entry.credential.type.contains('PieceOfArt')) {
           wallet.addIssuanceProcess(threadId);
-        }
-      }
-      if (invoice != null) {
-        try {
-          if (lnAdminKey != null) {
-            await payInvoice(lnAdminKey, invoice);
-            wallet.getLnBalance(paymentId!);
-          } else {
-            showErrorMessage('Fatel error', 'kein Zahlungskonto gefunden');
-            return false;
-          }
-          logger.d('erfolgreich bezahlt');
-          paymentDetails['paymentId'] = paymentId;
-          paymentDetails['value'] = '-$toPay';
-          paymentDetails['note'] =
-              '${getTypeToShow(message.detail!.first.credential.type)} empfangen';
-
-          showModalBottomSheet(
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(10),
-                    topRight: Radius.circular(10)),
-              ),
-              context: navigatorKey.currentContext!,
-              builder: (context) {
-                return ModalDismissWrapper(
-                  child: PaymentFinished(
-                    headline: AppLocalizations.of(navigatorKey.currentContext!)!
-                        .paymentSuccessful,
-                    success: true,
-                    amount: CurrencyDisplay(
-                        amount: "-$toPay",
-                        symbol: 'sat',
-                        mainFontSize: 35,
-                        centered: true),
-                  ),
-                );
-              });
-        } catch (e) {
-          showModalBottomSheet(
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(10),
-                    topRight: Radius.circular(10)),
-              ),
-              context: navigatorKey.currentContext!,
-              builder: (context) {
-                return PaymentFinished(
-                  headline: AppLocalizations.of(context)!.paymentFailed,
-                  success: false,
-                  amount: CurrencyDisplay(
-                      amount: "-$toPay",
-                      symbol: 'sat',
-                      mainFontSize: 35,
-                      centered: true),
-                  additionalInfo: Column(children: [
-                    const SizedBox(height: 20),
-                    Text(AppLocalizations.of(context)!.paymentFailedNote,
-                        style: const TextStyle(color: Colors.red)),
-                  ]),
-                );
-              });
         }
       }
     } else {
@@ -253,20 +139,20 @@ Future<bool> handleOfferCredential(
         // try {
         //   private = await wallet.getPrivateKeyForCredentialDid(id);
         // } catch (e) {
-        //   _sendProposeCredential(message, wallet, myDid, paymentDetails);
+        //   _sendProposeCredential(message, wallet, myDid);
         //   return false;
         // }
         if (!(await wallet.wallet.containsKey(id))) {
-          _sendProposeCredential(message, wallet, myDid, paymentDetails);
+          _sendProposeCredential(message, wallet, myDid);
           return false;
         }
       } else {
         // Issuer likes to issue credential without id (not bound to holder)
-        _sendRequestCredential(message, wallet, myDid, paymentDetails);
+        _sendRequestCredential(message, wallet, myDid);
         return false;
       }
     }
-    await _sendRequestCredential(message, wallet, myDid, paymentDetails);
+    await _sendRequestCredential(message, wallet, myDid);
   } else if (message.credentialManifest != null) {
     var request = RequestCredential(
         replyUrl: '$relay/buffer/$myDid',
@@ -287,7 +173,6 @@ _sendRequestCredential(
   OfferCredential offer,
   WalletProvider wallet,
   String myDid,
-  Map<String, String> paymentDetails,
 ) async {
   List<LdProofVcDetail> detail = [];
   for (var d in offer.detail!) {
@@ -307,19 +192,12 @@ _sendRequestCredential(
       from: myDid,
       to: [offer.from!]);
 
-  if (paymentDetails.isNotEmpty) {
-    wallet.storePayment(paymentDetails['paymentId']!, paymentDetails['value']!,
-        paymentDetails['note']!,
-        belongingCredentials: [
-          '${detail.first.credential.issuanceDate.toIso8601String()}${paymentDetails['note']!}'
-        ]);
-  }
   sendMessage(myDid, determineReplyUrl(offer.replyUrl, offer.replyTo), wallet,
       message, offer.from!);
 }
 
-_sendProposeCredential(OfferCredential offer, WalletProvider wallet,
-    String myDid, Map<String, String> paymentDetails) async {
+_sendProposeCredential(
+    OfferCredential offer, WalletProvider wallet, String myDid) async {
   List<LdProofVcDetail> detail = [];
   var firstDid = '';
   for (int i = 0; i < offer.detail!.length; i++) {
@@ -362,12 +240,6 @@ _sendProposeCredential(OfferCredential offer, WalletProvider wallet,
   }
 
   logger.d(message.toJson());
-
-  if (paymentDetails.isNotEmpty) {
-    wallet.storePayment(paymentDetails['paymentId']!, paymentDetails['value']!,
-        paymentDetails['note']!,
-        belongingCredentials: [firstDid]);
-  }
 
   sendMessage(myDid, determineReplyUrl(offer.replyUrl, offer.replyTo), wallet,
       message, offer.from!);
