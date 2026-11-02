@@ -304,8 +304,10 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        // No Screenshots
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // No Screenshots, except in dev builds (eu.hidy.app.dev) used for demos
+        if (!BuildConfig.APPLICATION_ID.endsWith(".dev")) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
 
         // Flutter
         GeneratedPluginRegistrant.registerWith(flutterEngine)

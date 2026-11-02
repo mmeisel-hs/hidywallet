@@ -39,6 +39,9 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+// dev build: no key.properties, or forced with `flutter build apk -P devBuild=true`
+def devBuild = !keystorePropertiesFile.exists() || project.findProperty('devBuild') == 'true'
+
 android {
     compileSdkVersion 36
 
@@ -60,8 +63,8 @@ android {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId "eu.hidy.app"
         manifestPlaceholders["appLabel"] = "Hidy"
-        // without key.properties (local dev builds) use an own ID, so the app installs next to the store version
-        if (!keystorePropertiesFile.exists()) {
+        // dev builds use an own ID, so the app installs next to the store version
+        if (devBuild) {
             applicationIdSuffix ".dev"
             manifestPlaceholders["appLabel"] = "Hidy Dev"
         }
@@ -82,8 +85,8 @@ android {
 
     buildTypes {
         release {
-            // without key.properties (e.g. local dev builds) the release build is signed with the debug key
-            signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
+            // dev builds are signed with the debug key
+            signingConfig devBuild ? signingConfigs.debug : signingConfigs.release
         }
     }
 
