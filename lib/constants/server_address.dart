@@ -74,33 +74,24 @@ Map knownAuthServer = {
   }
 };
 
-// *****Endpoints for Public release*****
+// Backend of the build: the public one by default, the test backend with
+// `--dart-define=HIDY_ENV=test` (test release in the Play internal test track).
+const bool testEnvironment = String.fromEnvironment('HIDY_ENV') == 'test';
+const String _backend =
+    testEnvironment ? 'https://test.hidy.app' : 'https://hidy.app';
 
 var contextEndpoint =
-    'https://hidy.app/walletcontext?plattform=${Platform.isIOS ? '1' : '2'}';
+    '$_backend/walletcontext?plattform=${Platform.isIOS ? '1' : '2'}';
 var applicationEndpoint =
-    'https://hidy.app/walletcontext/apps?plattform=${Platform.isIOS ? '1' : '2'}';
-var stylingEndpoint = 'https://hidy.app/walletcontext/layouts';
-var termsVersionEndpoint = 'https://hidy.app/walletcontext/terms';
+    '$_backend/walletcontext/apps?plattform=${Platform.isIOS ? '1' : '2'}';
+var stylingEndpoint = '$_backend/walletcontext/layouts';
+var termsVersionEndpoint = '$_backend/walletcontext/terms';
 var messagingBackend =
     'https://test.hidy.app/walletcontext/fbm/registeraccount';
-String versionNumber = '4.2.10';
-String baseUrl = 'https://hidy.app';
-bool testBuild = false;
-
-// ******Endpoints for Test-Release******
-
-// var contextEndpoint =
-//     'https://test.hidy.app/walletcontext?plattform=${Platform.isIOS ? '1' : '2'}';
-// var applicationEndpoint =
-//     'https://test.hidy.app/walletcontext/apps?plattform=${Platform.isIOS ? '1' : '2'}';
-// var stylingEndpoint = 'https://test.hidy.app/walletcontext/layouts';
-// var termsVersionEndpoint = 'https://test.hidy.app/walletcontext/terms';
-// var messagingBackend =
-//     'https://test.hidy.app/walletcontext/fbm/registeraccount';
-// String versionNumber = '4.2.8-test';
-// String baseUrl = 'https://test.hidy.app';
-// bool testBuild = true;
+String versionNumber = testEnvironment ? '4.2.10-test' : '4.2.10';
+String baseUrl = _backend;
+// accepts any TLS certificate, never in a build for the public backend
+bool testBuild = testEnvironment;
 
 bool inOidcTest = false;
 

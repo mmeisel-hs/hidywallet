@@ -304,8 +304,8 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        // No Screenshots, except in dev builds (eu.hidy.app.dev) used for demos
-        if (!BuildConfig.APPLICATION_ID.endsWith(".dev")) {
+        // No Screenshots, except in dev builds and test releases (see build.gradle)
+        if (!BuildConfig.ALLOW_SCREEN_CAPTURE) {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
 

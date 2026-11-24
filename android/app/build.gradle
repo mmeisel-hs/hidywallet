@@ -41,6 +41,8 @@ if (keystorePropertiesFile.exists()) {
 
 // dev build: no key.properties, or forced with `flutter build apk -P devBuild=true`
 def devBuild = !keystorePropertiesFile.exists() || project.findProperty('devBuild') == 'true'
+// test release for the Play internal test track: store ID, but screen capture allowed (`-P testRelease=true`)
+def testRelease = project.findProperty('testRelease') == 'true'
 
 android {
     compileSdkVersion 36
@@ -68,6 +70,8 @@ android {
             applicationIdSuffix ".dev"
             manifestPlaceholders["appLabel"] = "Hidy Dev"
         }
+        // dev builds and test releases allow screenshots and screen sharing, e.g. for demos
+        buildConfigField "boolean", "ALLOW_SCREEN_CAPTURE", (devBuild || testRelease) ? "true" : "false"
         minSdkVersion 28
         targetSdkVersion 36
         versionCode flutterVersionCode.toInteger()
